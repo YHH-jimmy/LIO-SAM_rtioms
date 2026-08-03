@@ -1,5 +1,193 @@
 # LIO-SAM
 
+<!-- VOXEL-MAP-ROS2-OVERVIEW:START -->
+
+## LIO-SAM RTIOMS — Voxel Map ROS2 Research Branch
+
+This repository is a research and engineering fork of ROS2 LIO-SAM. The `main` branch is retained as the LIO-SAM / RTIOMS comparison baseline. The `voxel-map-ros2` branch is reserved for integrating and evaluating a ROS2 Adaptive Voxel Map scan-to-map frontend.
+
+The target environment is ROS2 Humble on Ubuntu 22.04, including WSL2 and native Linux. This branch is experimental and is not production-ready. No Adaptive Voxel Map source integration is included in this initial documentation commit.
+
+### Repository Branch Overview
+
+| Branch | Purpose | Current State |
+| --- | --- | --- |
+| `main` | LIO-SAM / RTIOMS comparison baseline | Baseline |
+| `voxel-map-ros2` | Adaptive Voxel Map ROS2 integration and experiments | Experimental integration branch |
+
+```bash
+cd ~/ros2_ws/src
+git clone https://github.com/YHH-jimmy/LIO-SAM_rtioms.git
+cd LIO-SAM_rtioms
+git checkout voxel-map-ros2
+cd ..
+colcon build --symlink-install
+```
+
+The `voxel-map-ros2` branch is currently an experimental integration branch and may not yet contain the Adaptive Voxel Map implementation.
+
+### Current Project Status
+
+| Component | Status | Notes |
+| --- | --- | --- |
+| ROS2 LIO-SAM baseline | Available | Existing repository baseline |
+| LIO-SAM deskew cloud export | Verified | PointCloud2 output verified with frame `velodyne` in the current M2DGR experiment |
+| Standalone ROS2 VoxelMap reference | Experimental | Developed and validated in a separate workspace |
+| Adaptive voxel initial map construction | Verified in standalone test | Initial root voxel map can be created |
+| Adaptive voxel lookup | Verified in standalone test | Root voxel lookup produced valid matches |
+| Planar correspondence generation | Verified in standalone test | Planar leaf and point-to-plane correspondences were produced |
+| Optimizer numerical stability | Failing | A non-finite optimizer update was observed |
+| Continuous adaptive map update | Blocked | Blocked by the optimizer failure |
+| LIO-SAM and VoxelMap integration | Not Implemented | Planned for this branch |
+| Adaptive voxel RViz visualization | Not Implemented | Plane, leaf and voxel visualization is planned |
+| Full trajectory evaluation | Not Completed | Requires stable registration first |
+
+This status describes current research evidence. It must not be interpreted as a completed LIO-SAM and Adaptive Voxel Map integration.
+
+### Research Goal
+
+- Replace or augment the existing LIO-SAM feature-based scan-to-map frontend with an Adaptive Voxel Map frontend.
+- Preserve LIO-SAM deskewing, IMU preintegration and factor-graph backend where applicable.
+- Evaluate voxel-based plane constraints in geometrically degenerate environments.
+- Provide reproducible ROS2 bag, diagnostic, frame-trace, runtime and trajectory comparisons.
+
+```text
+LiDAR PointCloud2
+  -> LIO-SAM deskew
+  -> Adaptive Voxel preprocessing
+  -> voxel and planar correspondence
+  -> scan-to-map optimizer
+  -> keyframe and map update
+  -> LIO-SAM factor-graph backend
+```
+
+This is the target architecture. It is not the currently completed architecture of the branch.
+
+### Branch Strategy
+
+| Branch Pattern | Purpose |
+| --- | --- |
+| `main` | Stable LIO-SAM / RTIOMS comparison baseline |
+| `voxel-map-ros2` | Adaptive Voxel Map integration branch |
+| `feature/voxel-core-integration` | Future isolated VoxelMap core integration work |
+| `feature/voxel-visualization` | Future adaptive voxel visualization work |
+| `feature/optimizer-monitoring` | Future optimizer monitoring work |
+| `experiment/m2dgr-door02` | Future M2DGR experiment work |
+| `experiment/hilti-elevator` | Future HILTI/elevator experiment work |
+
+Only `main` and `voxel-map-ros2` are created or used in this task. The other names are documented conventions only.
+
+### Version Comparison Plan
+
+| Version | Deskew | Frontend Representation | Registration | Backend | Purpose |
+| --- | --- | --- | --- | --- | --- |
+| `main` baseline | LIO-SAM | Corner and surface features | Feature scan-to-map | iSAM2 factor graph | Baseline |
+| Standalone VoxelMap reference | External deskew cloud | Adaptive voxel and planar representation | Voxel point-to-plane optimizer | None | Core validation |
+| `voxel-map-ros2` target | LIO-SAM | Adaptive voxel and planar representation | Integrated voxel scan-to-map | LIO-SAM backend | Proposed system |
+
+Metrics: source/callback frame count and completeness, input/finite/downsampled points, lookup/root/planar-leaf/correspondence counts, optimizer and feature runtime, registration/map-update rate, APE/RPE when valid, CPU/memory, trajectory duration, and map geometry quality.
+
+### Current Standalone Experimental Evidence
+
+These results were produced by a separate standalone ROS2 VoxelMap validation workspace. They were not produced by an Adaptive Voxel Map implementation integrated into this repository branch.
+
+- Dataset: M2DGR `door_02` partial deskew recording
+- Input topic: `/rtioms_v1_liosam/deskew/cloud_deskewed`
+- Input type: `sensor_msgs/msg/PointCloud2`
+- Input frame: `velodyne`
+
+| Item | Observed Value |
+| --- | --- |
+| Initial adaptive voxel map | Created |
+| Initial root voxels | 2617 |
+| Frame 2 input points | 50302 |
+| Frame 2 lookup entry points | 7584 |
+| Frame 2 root voxel found | 1622 |
+| Frame 2 planar leaf found | 2412 lookup hits |
+| Frame 2 accepted correspondences | 1100 |
+| Optimizer called | Yes |
+| Optimizer translation update | Non-finite |
+| Optimizer rotation update | Non-finite |
+| Registration success in the referenced run | 0 |
+| Continuous map update | Blocked after optimizer failure |
+
+`planar leaf found = 2412` is a lookup-hit statistic and must not be interpreted as 2412 unique adaptive voxel leaves. These results are included only as integration-planning evidence.
+
+### Known Limitations
+
+- The current standalone optimizer can produce non-finite updates.
+- The adaptive voxel map initializes but does not continue updating after the observed failure.
+- `/voxelmap_reference/cloud_current` is the accepted current scan representation and is not the Adaptive Voxel Map.
+- Adaptive voxel leaf, plane-center, voxel-boundary and plane-normal visualization has not been implemented.
+- The current M2DGR deskew recording is a partial sequence.
+- Full comparison requires stable callback delivery and a numerically stable optimizer.
+- Dataset-specific frame IDs and parameters must not be assumed globally.
+- Topic publication alone does not prove registration success or map-update success.
+
+### Planned Development Phases
+
+#### Phase 0 — Baseline Preservation
+- Record the `main` baseline commit; preserve behavior and repeatable evaluation outputs.
+
+#### Phase 1 — VoxelMap Core Import
+- Import ROS-independent core with upstream licensing, attribution and source/commit provenance.
+
+#### Phase 2 — ROS2 Adapter
+- Consume deskewed PointCloud2; validate fields, timestamps and frames; publish diagnostics and per-frame traces.
+
+#### Phase 3 — Adaptive Voxel Visualization
+- Publish plane centers, voxel layers/boundaries and normals; distinguish scan, lookup, correspondence and accumulated map.
+
+#### Phase 4 — Optimizer Stabilization
+- Identify the first non-finite stage with observation-only diagnostics; establish root cause before fixes.
+
+#### Phase 5 — LIO-SAM Integration
+- Connect voxel registration while preserving IMU preintegration/factor-graph interfaces and baseline comparison.
+
+#### Phase 6 — Evaluation
+- Compare `main` and `voxel-map-ros2` on M2DGR, prepared HILTI/elevator and degenerate-environment sequences.
+
+### Reproducibility Record
+
+```text
+Repository:
+Repository branch:
+Commit SHA:
+Baseline commit SHA:
+ROS distribution:
+Ubuntu version:
+Execution environment:
+Dataset:
+Bag path:
+Input topic:
+Input message type:
+Input frame:
+Playback rate:
+Configuration profile:
+Result directory:
+Source frame count:
+Callback frame count:
+Registration success:
+Map update count:
+APE:
+RPE:
+Runtime:
+Known failure:
+Notes:
+```
+
+### Adaptive Voxel Map Upstream Attribution
+
+Upstream VoxelMap repository: <https://github.com/hku-mars/VoxelMap>
+
+Pinned reference commit: `d787ee8ccfb0e509a36adb2c52bd5da97b29c39a`
+
+The actual source integration must preserve the upstream GPL license, copyright notices and attribution. No claim is made that upstream VoxelMap source has already been merged into this branch.
+
+<!-- VOXEL-MAP-ROS2-OVERVIEW:END -->
+
+## Original LIO-SAM Documentation
+
 **A real-time lidar-inertial odometry package. We strongly recommend the users read this document thoroughly and test the package with the provided dataset first. A video of the demonstration of the method can be found on [YouTube](https://www.youtube.com/watch?v=A0H8CoORZJU).**
 
 <p align='center'>
